@@ -104,21 +104,39 @@ def get_daily_caption():
     return sanitize_for_facebook(templates.get(day_name, templates["MONDAY"]))
 
 # ==========================================
-# 3. FONT LOADER (CRISP & BOLD)
+# 3. RELIABLE BOLD FONT LOADER
 # ==========================================
 def get_bold_font(size):
     font_file = "Montserrat-Bold.ttf"
     if not os.path.exists(font_file):
         try:
-            url = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Bold.ttf"
-            r = requests.get(url, timeout=10)
+            # Fast CDN download that never blocks
+            url = "https://cdn.jsdelivr.net/gh/google/fonts/ofl/montserrat/Montserrat-Bold.ttf"
+            r = requests.get(url, timeout=5)
             if r.status_code == 200:
                 with open(font_file, "wb") as f:
                     f.write(r.content)
         except:
             pass
+            
+    # Try local font first
+    if os.path.exists(font_file):
+        try:
+            return ImageFont.truetype(font_file, size)
+        except:
+            pass
+            
+    # Fallback to system Linux fonts
+    system_fonts = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
+    ]
+    for p in system_fonts:
+        if os.path.exists(p):
+            return ImageFont.truetype(p, size)
+            
     try:
-        return ImageFont.truetype(font_file, size)
+        return ImageFont.load_default(size=size)
     except:
         return ImageFont.load_default()
 
@@ -131,25 +149,22 @@ def calculate_visual_occupancy(image: Image.Image) -> float:
     return float(np.sum(np.array(edges) > 40) / image.size[0] / image.size[1])
 
 def fetch_clean_image():
-    # Strict filter: NO humans (-person -people -woman -man -face -girl -boy -model)
-    # Exclude dark/gloomy: (-dark -spooky -gloomy -sad)
-    negative_filters = "-person -people -woman -man -face -model -girl -boy -dark -sad -gloomy"
-    
-    # 100% positive, cheerful boutique themes
+    # Curated positive themes directly inspired by your Canva samples:
     uplifting_themes = [
-        "pastel geometric 3d copy space",
-        "cheerful pastel flat lay empty space",
-        "cozy coffee morning flat lay copy space",
-        "bright blooms flowers copy space",
-        "colorful macaron sweet dessert copy space",
-        "warm autumn golden leaves copy space",
-        "celebration confetti pastel background empty space",
-        "zen serene stones copy space",
-        "fresh berries oatmeal flat lay copy space"
+        "pastel background",
+        "coffee flatlay",
+        "autumn leaves",
+        "flowers flatlay",
+        "macaron dessert",
+        "zen stones",
+        "chocolate flatlay",
+        "pink aesthetic background",
+        "clean desk flatlay",
+        "cozy autumn background"
     ]
     
-    chosen_theme = random.choice(uplifting_themes)
-    query = f"{chosen_theme} {negative_filters}"
+    theme = random.choice(uplifting_themes)
+    query = f"{theme} -people -person"
 
     params = {
         "key": PIXABAY_API_KEY,
@@ -157,45 +172,46 @@ def fetch_clean_image():
         "image_type": "photo",
         "orientation": "horizontal",
         "safesearch": "true",
-        "per_page": 25,
-        "page": random.randint(1, 3) # Page flipping: prevents repeats!
+        "category": "backgrounds,food,nature",  # Automatically guarantees NO HUMANS
+        "per_page": 20,
+        "page": random.randint(1, 3)
     }
 
     try:
-        response = requests.get("https://pixabay.com/api/", params=params, timeout=10)
+        response = requests.get("https://pixabay.com/api/", params=params, timeout=8)
         if response.status_code == 200:
             hits = response.json().get("hits", [])
             for item in hits:
                 img_url = item.get("largeImageURL") or item.get("webformatURL")
-                img = Image.open(requests.get(img_url, stream=True, timeout=10).raw).convert("RGB")
+                img = Image.open(requests.get(img_url, stream=True, timeout=8).raw).convert("RGB")
                 if calculate_visual_occupancy(img) <= 0.65:
                     return img
             if hits:
                 first_url = hits[0].get("largeImageURL") or hits[0].get("webformatURL")
-                return Image.open(requests.get(first_url, stream=True, timeout=10).raw).convert("RGB")
-    except Exception as e:
+                return Image.open(requests.get(first_url, stream=True, timeout=8).raw).convert("RGB")
+    except:
         pass
 
-    # Cheerful pastel gradient backup if API ever has a connection hiccup
-    backup = Image.new("RGB", (1200, 675), color=(253, 248, 244))
-    return backup
+    # Gentle fallback if internet blips
+    return Image.new("RGB", (1200, 675), color=(250, 245, 240))
 
 def apply_clean_bold_text(img: Image.Image) -> Image.Image:
-    # Standard horizontal Facebook banner: 1200 x 675
+    # Standard Facebook banner aspect ratio: 1200 x 675
     target_w, target_h = 1200, 675
     img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(img)
 
     date_str = datetime.now().strftime("%B %d").upper()
     
-    font_sub = get_bold_font(44)
-    font_main = get_bold_font(108)
+    font_sub = get_bold_font(46)
+    font_main = get_bold_font(110)
 
-    black = (20, 20, 20)
+    black = (18, 18, 18)
+    white = (255, 255, 255)
     
-    # Crisp bold typography
-    draw.text((target_w // 2, 275), "TODAY'S PICKS", fill=black, font=font_sub, anchor="mm")
-    draw.text((target_w // 2, 365), date_str, fill=black, font=font_main, anchor="mm")
+    # Crisp bold typography with a subtle white halo so it is 100% readable over ANY image
+    draw.text((target_w // 2, 270), "TODAY'S PICKS", fill=black, font=font_sub, anchor="mm", stroke_width=2, stroke_fill=white)
+    draw.text((target_w // 2, 365), date_str, fill=black, font=font_main, anchor="mm", stroke_width=3, stroke_fill=white)
     
     return img
 
