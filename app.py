@@ -8,9 +8,9 @@ from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 # ==========================================
-# 1. YOUR API KEY
+# 1. YOUR API KEY (PASTE YOUR REAL KEY HERE!)
 # ==========================================
-PIXABAY_API_KEY = "PASTE_YOUR_KEY_HERE"  # <--- Make sure your Pixabay key is here!
+PIXABAY_API_KEY = "58198183-064b4494b86b7907c82011ee6"
 
 st.set_page_config(page_title="Boutique Daily Post", page_icon="✨", layout="centered")
 
@@ -111,9 +111,10 @@ def get_bold_font(size):
     if not os.path.exists(font_file):
         try:
             url = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Bold.ttf"
-            r = requests.get(url)
-            with open(font_file, "wb") as f:
-                f.write(r.content)
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                with open(font_file, "wb") as f:
+                    f.write(r.content)
         except:
             pass
     try:
@@ -122,7 +123,7 @@ def get_bold_font(size):
         return ImageFont.load_default()
 
 # ==========================================
-# 4. IMAGE FINDER & BOLD OVERLAY
+# 4. UPLIFTING / NO-HUMANS IMAGE FINDER
 # ==========================================
 def calculate_visual_occupancy(image: Image.Image) -> float:
     gray = image.convert('L')
@@ -130,46 +131,70 @@ def calculate_visual_occupancy(image: Image.Image) -> float:
     return float(np.sum(np.array(edges) > 40) / image.size[0] / image.size[1])
 
 def fetch_clean_image():
-    queries = [
-        "pastel 3d minimal background copy space",
-        "clean pastel flat lay empty space",
-        "aesthetic coffee copy space",
-        "minimalist pastel aesthetic copy space",
-        "autumn leaves border copy space"
-    ]
-    query = random.choice(queries)
-    url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={query}&image_type=photo&orientation=all&safesearch=true&per_page=20"
+    # Strict filter: NO humans (-person -people -woman -man -face -girl -boy -model)
+    # Exclude dark/gloomy: (-dark -spooky -gloomy -sad)
+    negative_filters = "-person -people -woman -man -face -model -girl -boy -dark -sad -gloomy"
     
-    res = requests.get(url).json()
-    hits = res.get("hits", [])
-    if not hits:
-        url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q=minimalist+pastel+background&image_type=photo&per_page=15"
-        hits = requests.get(url).json().get("hits", [])
+    # 100% positive, cheerful boutique themes
+    uplifting_themes = [
+        "pastel geometric 3d copy space",
+        "cheerful pastel flat lay empty space",
+        "cozy coffee morning flat lay copy space",
+        "bright blooms flowers copy space",
+        "colorful macaron sweet dessert copy space",
+        "warm autumn golden leaves copy space",
+        "celebration confetti pastel background empty space",
+        "zen serene stones copy space",
+        "fresh berries oatmeal flat lay copy space"
+    ]
+    
+    chosen_theme = random.choice(uplifting_themes)
+    query = f"{chosen_theme} {negative_filters}"
 
-    for item in hits:
-        img_url = item.get("largeImageURL") or item.get("webformatURL")
-        img = Image.open(requests.get(img_url, stream=True).raw).convert("RGB")
-        if calculate_visual_occupancy(img) <= 0.65:
-            return img
-            
-    first_url = hits[0].get("largeImageURL") or hits[0].get("webformatURL")
-    return Image.open(requests.get(first_url, stream=True).raw).convert("RGB")
+    params = {
+        "key": PIXABAY_API_KEY,
+        "q": query,
+        "image_type": "photo",
+        "orientation": "horizontal",
+        "safesearch": "true",
+        "per_page": 25,
+        "page": random.randint(1, 3) # Page flipping: prevents repeats!
+    }
+
+    try:
+        response = requests.get("https://pixabay.com/api/", params=params, timeout=10)
+        if response.status_code == 200:
+            hits = response.json().get("hits", [])
+            for item in hits:
+                img_url = item.get("largeImageURL") or item.get("webformatURL")
+                img = Image.open(requests.get(img_url, stream=True, timeout=10).raw).convert("RGB")
+                if calculate_visual_occupancy(img) <= 0.65:
+                    return img
+            if hits:
+                first_url = hits[0].get("largeImageURL") or hits[0].get("webformatURL")
+                return Image.open(requests.get(first_url, stream=True, timeout=10).raw).convert("RGB")
+    except Exception as e:
+        pass
+
+    # Cheerful pastel gradient backup if API ever has a connection hiccup
+    backup = Image.new("RGB", (1200, 675), color=(253, 248, 244))
+    return backup
 
 def apply_clean_bold_text(img: Image.Image) -> Image.Image:
-    # Standard Facebook banner aspect ratio: 1200 x 675
+    # Standard horizontal Facebook banner: 1200 x 675
     target_w, target_h = 1200, 675
     img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(img)
 
-    date_str = datetime.now().strftime("%B %d").upper() # e.g. "OCTOBER 24"
+    date_str = datetime.now().strftime("%B %d").upper()
     
-    font_sub = get_bold_font(42)
-    font_main = get_bold_font(105)
+    font_sub = get_bold_font(44)
+    font_main = get_bold_font(108)
 
-    black = (17, 17, 17)
+    black = (20, 20, 20)
     
     # Crisp bold typography
-    draw.text((target_w // 2, 280), "TODAY'S PICKS", fill=black, font=font_sub, anchor="mm")
+    draw.text((target_w // 2, 275), "TODAY'S PICKS", fill=black, font=font_sub, anchor="mm")
     draw.text((target_w // 2, 365), date_str, fill=black, font=font_main, anchor="mm")
     
     return img
@@ -182,7 +207,7 @@ st.title("✨ Daily Boutique Post Generator")
 col1, col2 = st.columns([1.2, 1])
 
 if "current_image" not in st.session_state:
-    with st.spinner("Finding today's photo..."):
+    with st.spinner("Finding today's uplifting photo..."):
         st.session_state.current_image = apply_clean_bold_text(fetch_clean_image())
 
 with col1:
