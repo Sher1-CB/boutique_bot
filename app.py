@@ -2,19 +2,20 @@ import streamlit as st
 import requests
 import random
 import io
+import os
 import numpy as np
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 # ==========================================
-# 1. YOUR API KEY (PASTE YOUR KEY HERE!)
+# 1. YOUR API KEY
 # ==========================================
-PIXABAY_API_KEY = "58198183-064b4494b86b7907c82011ee6"
+PIXABAY_API_KEY = "PASTE_YOUR_KEY_HERE"  # <--- Make sure your Pixabay key is here!
 
 st.set_page_config(page_title="Boutique Daily Post", page_icon="✨", layout="centered")
 
 # ==========================================
-# 2. CAPTION & FILTER LOGIC
+# 2. CAPTION LOGIC
 # ==========================================
 US_SPECIAL_OCCASIONS = {
     (1, 1): "New Year's Day", (2, 14): "Valentine's Day", (3, 17): "St. Patrick's Day",
@@ -103,7 +104,25 @@ def get_daily_caption():
     return sanitize_for_facebook(templates.get(day_name, templates["MONDAY"]))
 
 # ==========================================
-# 3. IMAGE FINDER & BOLD OVERLAY
+# 3. FONT LOADER (CRISP & BOLD)
+# ==========================================
+def get_bold_font(size):
+    font_file = "Montserrat-Bold.ttf"
+    if not os.path.exists(font_file):
+        try:
+            url = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Bold.ttf"
+            r = requests.get(url)
+            with open(font_file, "wb") as f:
+                f.write(r.content)
+        except:
+            pass
+    try:
+        return ImageFont.truetype(font_file, size)
+    except:
+        return ImageFont.load_default()
+
+# ==========================================
+# 4. IMAGE FINDER & BOLD OVERLAY
 # ==========================================
 def calculate_visual_occupancy(image: Image.Image) -> float:
     gray = image.convert('L')
@@ -112,10 +131,11 @@ def calculate_visual_occupancy(image: Image.Image) -> float:
 
 def fetch_clean_image():
     queries = [
-        "pastel geometric 3d copy space",
-        "pastel spheres minimal background copy space",
+        "pastel 3d minimal background copy space",
         "clean pastel flat lay empty space",
-        "minimalist pastel aesthetic copy space"
+        "aesthetic coffee copy space",
+        "minimalist pastel aesthetic copy space",
+        "autumn leaves border copy space"
     ]
     query = random.choice(queries)
     url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={query}&image_type=photo&orientation=all&safesearch=true&per_page=20"
@@ -136,44 +156,30 @@ def fetch_clean_image():
     return Image.open(requests.get(first_url, stream=True).raw).convert("RGB")
 
 def apply_clean_bold_text(img: Image.Image) -> Image.Image:
-    # Resize to square 1080x1080
-    target = 1080
-    img = img.resize((target, target), Image.Resampling.LANCZOS)
+    # Standard Facebook banner aspect ratio: 1200 x 675
+    target_w, target_h = 1200, 675
+    img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(img)
 
-    date_str = datetime.now().strftime("%B %d").upper() # e.g. "OCTOBER 23"
+    date_str = datetime.now().strftime("%B %d").upper() # e.g. "OCTOBER 24"
     
-    # Try bold modern fonts
-    font_paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-        "arialbd.ttf", "arial.ttf"
-    ]
-    font_title, font_date = None, None
-    for p in font_paths:
-        try:
-            font_title = ImageFont.truetype(p, 54)
-            font_date = ImageFont.truetype(p, 130)
-            break
-        except:
-            continue
-            
-    if not font_title:
-        font_title = font_date = ImageFont.load_default()
+    font_sub = get_bold_font(42)
+    font_main = get_bold_font(105)
 
-    # Crisp bold black typography centered directly on image
     black = (17, 17, 17)
-    draw.text((540, 480), "TODAY'S PICKS", fill=black, font=font_title, anchor="mm")
-    draw.text((540, 580), date_str, fill=black, font=font_date, anchor="mm")
+    
+    # Crisp bold typography
+    draw.text((target_w // 2, 280), "TODAY'S PICKS", fill=black, font=font_sub, anchor="mm")
+    draw.text((target_w // 2, 365), date_str, fill=black, font=font_main, anchor="mm")
     
     return img
 
 # ==========================================
-# 4. WEB INTERFACE (WHAT COWORKER SEES)
+# 5. WEB INTERFACE
 # ==========================================
 st.title("✨ Daily Boutique Post Generator")
 
-col1, col2 = st.columns([1, 1])
+col1, col2 = st.columns([1.2, 1])
 
 if "current_image" not in st.session_state:
     with st.spinner("Finding today's photo..."):
